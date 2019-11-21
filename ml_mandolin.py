@@ -1,15 +1,17 @@
+# Original Code from: https://medium.com/intel-student-ambassadors/music-generation-using-lstms-in-keras-9ded32835a8f
+
 import os
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
-
-import pandas as pd
-# import librosa
-
 import numpy as np
-# import pydub
-
+import pandas as pd
 from keras.layers import Dense, LSTM, LeakyReLU
-from keras.models import Sequential, load_model
+from keras.models import Sequential
 from scipy.io.wavfile import read, write
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+os.environ['HDF5_DISABLE_VERSION_CHECK'] = '2'
+
+# import librosa
+# import pydub
+# import tensorflow.compat.v1 as tf
 
 path_vn = os.getcwd() + '/Audio/VN/'
 rate, music1 = read(path_vn + 'v1.wav')
@@ -26,7 +28,7 @@ rate, music11 = read(path_vn + 'v11.wav')
 rate, music12 = read(path_vn + 'v12.wav')
 
 dataStart = 0
-dataEnd = 400000
+dataEnd = 40000
 music1 = pd.DataFrame(music1[dataStart:dataEnd, :])
 music2 = pd.DataFrame(music2[dataStart:dataEnd, :])
 music3 = pd.DataFrame(music3[dataStart:dataEnd, :])
@@ -44,9 +46,9 @@ music12 = pd.DataFrame(music12[dataStart:dataEnd, :])
 # function to create data by shifting the music data
 def create_dataset(df, look_back, train=True):
     dataX1, dataX2, dataY1, dataY2 = [], [], [], []
-    for i in range(len(df)-look_back-1):
-        dataX1.append(df.iloc[i : i + look_back, 0].values)
-        dataX2.append(df.iloc[i : i + look_back, 1].values)
+    for i in range(len(df) - look_back - 1):
+        dataX1.append(df.iloc[i: i + look_back, 0].values)
+        dataX2.append(df.iloc[i: i + look_back, 1].values)
         if train:
             dataY1.append(df.iloc[i + look_back, 0])
             dataY2.append(df.iloc[i + look_back, 1])
@@ -57,7 +59,7 @@ def create_dataset(df, look_back, train=True):
 
 
 trainStart = dataStart
-trainEnd = 160000
+trainEnd = 20000
 training = pd.concat([music1.iloc[trainStart:trainEnd, :], music2.iloc[trainStart:trainEnd, :],
                       music3.iloc[trainStart:trainEnd, :], music4.iloc[trainStart:trainEnd, :],
                       music5.iloc[trainStart:trainEnd, :], music6.iloc[trainStart:trainEnd, :],
@@ -66,7 +68,7 @@ training = pd.concat([music1.iloc[trainStart:trainEnd, :], music2.iloc[trainStar
                       music11.iloc[trainStart:trainEnd, :], music12.iloc[trainStart:trainEnd, :]],
                      axis=0)
 
-testStart = trainStart + 1
+testStart = trainEnd + 1
 testEnd = dataEnd
 testing = pd.concat([music1.iloc[testStart:testEnd, :], music2.iloc[testStart:testEnd, :],
                      music3.iloc[testStart:testEnd, :], music4.iloc[testStart:testEnd, :],
@@ -74,22 +76,26 @@ testing = pd.concat([music1.iloc[testStart:testEnd, :], music2.iloc[testStart:te
                      music7.iloc[testStart:testEnd, :], music8.iloc[testStart:testEnd, :],
                      music9.iloc[testStart:testEnd, :], music10.iloc[testStart:testEnd, :],
                      music11.iloc[testStart:testEnd, :], music12.iloc[testStart:testEnd, :]],
-                     axis=0)
+                    axis=0)
+
+shape = 5
+iters = 5
+batch = 50
 
 # Create training dataset
-X1, X2, y1, y2 = create_dataset(training, look_back=10, train=True)
+X1, X2, y1, y2 = create_dataset(training, look_back=shape, train=True)
 
 # Create testing dataset
-test1, test2 = create_dataset(testing, look_back=10, train=False)
+test1, test2 = create_dataset(testing, look_back=shape, train=False)
 
-X1 = X1.reshape((-1, 1, 10))
-X2 = X2.reshape((-1, 1, 10))
-test1 = test1.reshape((-1, 1, 10))
-test2 = test2.reshape((-1, 1, 10))
+X1 = X1.reshape((-1, 1, shape))
+X2 = X2.reshape((-1, 1, shape))
+test1 = test1.reshape((-1, 1, shape))
+test2 = test2.reshape((-1, 1, shape))
 
 # LSTM Model for channel 1 of the music data
 rnn1 = Sequential()
-rnn1.add(LSTM(units=100, activation='linear', input_shape=(None, 10)))
+rnn1.add(LSTM(units=100, activation='linear', input_shape=(None, shape)))
 rnn1.add(LeakyReLU())
 rnn1.add(Dense(units=50, activation='linear'))
 rnn1.add(LeakyReLU())
@@ -100,12 +106,11 @@ rnn1.add(LeakyReLU())
 rnn1.add(Dense(units=1, activation='linear'))
 rnn1.add(LeakyReLU())
 rnn1.compile(optimizer='adam', loss='mean_squared_error')
-rnn1.fit(X1, y1, epochs=20, batch_size=100)
+rnn1.fit(X1, y1, epochs=iters, batch_size=batch)
 
 # LSTM Model for channel 2 of the music data
 rnn2 = Sequential()
-rnn2.add(LSTM(units=100, activation='linear', input_shape=(None, 10
-                                                           )))
+rnn2.add(LSTM(units=100, activation='linear', input_shape=(None, shape)))
 rnn2.add(LeakyReLU())
 rnn2.add(Dense(units=50, activation='linear'))
 rnn2.add(LeakyReLU())
@@ -116,16 +121,19 @@ rnn2.add(LeakyReLU())
 rnn2.add(Dense(units=1, activation='linear'))
 rnn2.add(LeakyReLU())
 rnn2.compile(optimizer='adam', loss='mean_squared_error')
-rnn2.fit(X1, y1, epochs=20, batch_size=100)
+rnn2.fit(X1, y1, epochs=iters, batch_size=batch)
 
 # making predictions for channel 1 and channel 2
 pred_rnn1 = rnn1.predict(test1)
 pred_rnn2 = rnn2.predict(test2)
 
 # saving the LSTM predicitons in wav format
-write('pred_rnn.wav', rate, pd.concat([pd.DataFrame(pred_rnn1.astype('int16')), pd.DataFrame(pred_rnn2.astype('int16'))], axis=1).values)
+write('pred_rnn.wav', rate, pd.concat([pd.DataFrame(pred_rnn1.astype('int16')),
+                                       pd.DataFrame(pred_rnn2.astype('int16'))], axis=1).values)
 # saving the original music in wav format
 write('original.wav', rate, testing.values)
+
+
 # def data_preprocessing():
 #     # Converts .WAV files into data and returns dataframe to main
 #
